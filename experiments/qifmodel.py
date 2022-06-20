@@ -11,10 +11,11 @@ from libqif.core.gvulnerability import Gain
 import matplotlib.pyplot as plt
 from util import float_equal
 from tqdm import tqdm
+from termcolor import colored
 
 class ModelBinary:
 
-    def __init__(self, n:int, m:int):
+    def __init__(self, n:int, m:int, gain:str):
         """Binary model.
 
         Parameters
@@ -24,12 +25,15 @@ class ModelBinary:
         
         m : int
             Sample's size
+
+        gain : str
+            "privacy - target in sample" or "privacy - target not in sample"
         """
 
         self.n = n
         self.m = m
         self.secrets = self._create_secrets(n)
-        self.gain = self._create_gain_adv_2i()
+        self.gain = self._create_gain(gain)
         self.channel = self._create_channel()
         self.hyper = Hyper(self.channel)
 
@@ -41,13 +45,35 @@ class ModelBinary:
         
         return Secrets(X, prior)
 
-    def _create_gain_adv_2i(self):
+    def _create_gain(self, gain):
+        if gain == "privacy - target in sample":
+            return self._create_gain_privacy_target_in_s()
+        elif gain == "privacy - target not in sample":
+            return self._create_gain_privacy_target_not_in_s()
+
+    def _create_gain_privacy_target_in_s(self):
+        """Adversary has a single target and she knows the target is in the sample.
+        She gains 1 if she guesses the target's value correctly or 0 otherwise.
+        """
         W = ["0","1"]
         matrix = np.zeros((len(W), self.secrets.num_secrets))
 
         for i in np.arange(len(W)):
             for j in np.arange(self.secrets.num_secrets):
                 matrix[i][j] = 1 if self.secrets.labels[j][0] == W[i] else 0
+
+        return Gain(self.secrets, W, matrix)
+
+    def _create_gain_privacy_target_not_in_s(self):
+        """Adversary has a single target and she knows the target is not in the sample.
+        She gains 1 if she guesses the target's value correctly or 0 otherwise.
+        """
+        W = ["0","1"]
+        matrix = np.zeros((len(W), self.secrets.num_secrets))
+
+        for i in np.arange(len(W)):
+            for j in np.arange(self.secrets.num_secrets):
+                matrix[i][j] = 1 if self.secrets.labels[j][self.m] == W[i] else 0
 
         return Gain(self.secrets, W, matrix)
 
@@ -62,15 +88,33 @@ class ModelBinary:
         return Channel(self.secrets, Y, matrix)
 
     def prior_vul(self):
+        """Prior vulnerability 'ground truth'."""
         return self.gain.prior_vulnerability()
 
     def post_vul_gt(self):
+        """Posterior vulnerability 'ground truth'."""
         return self.gain.posterior_vulnerability(self.hyper)
 
     @staticmethod
-    def post_vul_th(p):
+    def post_vul_privacy_target_in_s_th(p):
+        """Close formula for the same adversary of gain function gain_privacy_target_in_s."""
         n,m = p
-        return (m**2 - 2*floor(m/2)**2 + 3*m + floor(m/2)*(2*m - 2))/(2*m*(m+1))
+        return (m**2 - 2*floor(m/2)**2 + 3*m + floor(m/2)*(2    *m - 2))/(2*m*(m+1))
+
+    @staticmethod
+    def post_vul_privacy_target_not_in_s_th(p):
+        """Close formula for the same adversary of gain function gain_privacy_target_not_in_s."""
+        n,m = p
+        vul = 0
+
+        for y in np.arange(m+1):
+            s1, s2 = 0, 0
+            for yp in np.arange(n-m):
+                s1 = s1 + binom(m,y)*binom(n-m-1,yp)/(binom(n,y+yp+1)*(n+1))
+                s2 = s2 + binom(m,y)*binom(n-m-1,yp)/(binom(n,y+yp)*(n+1))
+            vul += max(s1,s2)
+        
+        return vul
 
 # Used to run in parallel
 def get_post_vul_gt(p):
@@ -78,21 +122,24 @@ def get_post_vul_gt(p):
     return ModelBinary(n, m).post_vul_gt()
 
 def exp1():
-    """Experiment 1. Check the correctness of equation by comparying with the real matrix multiplication
-    for n and m odd.
+    """Experiment 1. Check wheter posterior vulnerability of closed formula is matches
+    the ground truth for 1 <= m <= n <= 15.
+    Adversary: Single target, she know the target is in the sample.
     """
     
-    for n in np.arange(1,16):
-        for m in np.arange(1,n+1):
-            post_gt = ModelBinary(n, m).post_vul_gt()
-            post_th = ModelBinary.post_vul_th((n,m))
+    for n in tqdm(np.arange(1,16), desc="Experiment 1", ):
+        for m in np.arange(1,n):
+            post_gt = ModelBinary(n, m, gain="privacy - target in sample").post_vul_gt()
+            post_th = ModelBinary.post_vul_privacy_target_in_s_th((n,m))
             if not float_equal(post_gt, post_th):
-                print("Failed at n = %d, m = %d, GT = %.3f, TH = %.3f"%(n,m,post_gt,post_th))
+                print(colored("[Failed]", "red") + " - at n = %d, m = %d, GT = %.3f, TH = %.3f"%(n,m,post_gt,post_th))
                 return
-    print("[Experiment 1] - Successful: Equation matches the ground truth")
+    print(colored("[Successful]", "green") + " - Equation matches the ground truth")
 
 def exp2():
-    """Fixed n and varies m."""
+    """Create a graph m x posterior vulnerability (m = sample size) for a fixed n.
+    Adversary: Single target, she know the target is in the sample.
+    """
     font = {
         'size'   : 12
     }
@@ -102,7 +149,7 @@ def exp2():
     n = 201
     range_m = list(np.arange(1,n+1,2)) 
     with Pool(6) as p:
-        posts = p.map(ModelBinary.post_vul_th, [(n,m) for m in range_m])
+        posts = p.map(ModelBinary.post_vul_privacy_target_in_s_th, [(n,m) for m in range_m])
 
     plt.title("Fixed n = %d"%(n))
     plt.ylim(-0.1, 1.1)
@@ -115,7 +162,9 @@ def exp2():
     plt.show()    
 
 def exp3():
-    """Posterior vulnerability when m = X% of n."""
+    """Create a graph m x posterior vulnerability (m = sample size) when m = X% of n.
+    Adversary: Single target, she know the target is in the sample.
+    """
     font = {
         'size'   : 12
     }
@@ -127,7 +176,7 @@ def exp3():
     posts = dict()
     with Pool(6) as p:
         for m in m_values:
-            posts[m] = p.map(ModelBinary.post_vul_th, [(n,int(m*n)+1 if int(m*n)%2 == 0 else int(m*n)) for n in range_n])
+            posts[m] = p.map(ModelBinary.post_vul_privacy_target_in_s_th, [(n,int(m*n)+1 if int(m*n)%2 == 0 else int(m*n)) for n in range_n])
 
     plt.title("Posterior vulnerability when m = X% of n")
     plt.ylim(-0.1, 1.1)
@@ -141,40 +190,12 @@ def exp3():
         plt.text(range_n[-1]+10, posts[m_values[0]][-1]-i*0.025 +0.025, "%.5f"%(posts[m][-1]), color=colors[i])
         i += 1
     plt.legend()
-    plt.show() 
-
-def exp4():
-    for n in np.arange(3,11):
-        for m in np.arange(2,n+1):
-            for y in np.arange(1,m+1):
-                sum_ = 0
-                for y2 in np.arange(n-m+1):
-                    sum_ += (binom(m-1,y-1)*binom(n-m,y2)/binom(n,y+y2))
-                if not float_equal(sum_, y/m):
-                    print("[Experiment 4] - Failed. Equation doesn't match at:")
-                    print("                 n = %d, m = %d, y = %d. sum = %.3f, y/m = %.3f"%(n,m,y,sum_,y/m))
-                    return
-    print("[Experiment 4] - Successfull")    
-
-def exp5():
-    for n in np.arange(1,50):
-        for m in np.arange(1,n+1):
-            for y in np.arange(m+1):
-                sum_ = 0
-                for y2 in np.arange(n-m+1):
-                    sum_ += (binom(m-1,y-1)*binom(n-m,y2)/binom(n,y+y2))
-                if not float_equal(((m+1)*sum_)/(n+1), y/m):
-                    print("[Experiment 5] - Failed. Equation doesn't match at:")
-                    print("                 n = %d, m = %d, y = %d. sum = %.3f, y/m = %.3f"%(n,m,y,sum_,y/m))
-                    return
-    print("[Experiment 5] - Successfull")  
+    plt.show()
 
 def main():
-    # exp1()
+    exp1()
     # exp2()  
-    exp3()
-    # exp4()
-    # exp5()
+    # exp3()
 
 if __name__ == "__main__":
     main()
