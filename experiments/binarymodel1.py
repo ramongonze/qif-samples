@@ -27,7 +27,7 @@ class ModelBinary:
             Sample's size
 
         gain : str
-            "privacy - target in sample" or "privacy - target not in sample"
+            "privacy - target in sample" or "privacy - target out of sample"
         """
 
         self.n = n
@@ -48,8 +48,8 @@ class ModelBinary:
     def _create_gain(self, gain):
         if gain == "privacy - target in sample":
             return self._create_gain_privacy_target_in_s()
-        elif gain == "privacy - target not in sample":
-            return self._create_gain_privacy_target_not_in_s()
+        elif gain == "privacy - target out of sample":
+            return self._create_gain_privacy_target_out_of_s()
 
     def _create_gain_privacy_target_in_s(self):
         """Adversary has a single target and she knows the target is in the sample.
@@ -64,8 +64,8 @@ class ModelBinary:
 
         return Gain(self.secrets, W, matrix)
 
-    def _create_gain_privacy_target_not_in_s(self):
-        """Adversary has a single target and she knows the target is not in the sample.
+    def _create_gain_privacy_target_out_of_s(self):
+        """Adversary has a single target and she knows the target is out of the sample.
         She gains 1 if she guesses the target's value correctly or 0 otherwise.
         """
         W = ["0","1"]
@@ -99,22 +99,19 @@ class ModelBinary:
     def post_vul_privacy_target_in_s_th(p):
         """Close formula for the same adversary of gain function gain_privacy_target_in_s."""
         n,m = p
-        return (m**2 - 2*floor(m/2)**2 + 3*m + floor(m/2)*(2    *m - 2))/(2*m*(m+1))
+        return 3/4 + 1/(4*(floor((m+1)/2) + ceil(m/2)))
+        # if m%2 == 1:
+        #     return 3/4 + 1/(4*m)
+        # return 3/4 + 1/(4*(m+1))
 
     @staticmethod
-    def post_vul_privacy_target_not_in_s_th(p):
-        """Close formula for the same adversary of gain function gain_privacy_target_not_in_s."""
+    def post_vul_privacy_target_out_s_th(p):
+        """Close formula for the same adversary of gain function gain_privacy_target_out_of_s."""
         n,m = p
-        vul = 0
-
-        for y in np.arange(m+1):
-            s1, s2 = 0, 0
-            for yp in np.arange(n-m):
-                s1 = s1 + binom(m,y)*binom(n-m-1,yp)/(binom(n,y+yp+1)*(n+1))
-                s2 = s2 + binom(m,y)*binom(n-m-1,yp)/(binom(n,y+yp)*(n+1))
-            vul += max(s1,s2)
-        
-        return vul
+        return 3/4 - 1/(4*(floor(m/2)+ceil(m/2)+1))
+        # if m%2 == 1:
+        #     return 3/4 - 1/(4*(m+2))
+        # return 3/4 - 1/(4*(m+1))
 
 # Used to run in parallel
 def get_post_vul_gt(p):
@@ -122,9 +119,9 @@ def get_post_vul_gt(p):
     return ModelBinary(n, m).post_vul_gt()
 
 def exp1():
-    """Experiment 1. Check wheter posterior vulnerability of closed formula is matches
+    """Check wheter posterior vulnerability of closed formula is matches
     the ground truth for 1 <= m <= n <= 15.
-    Adversary: Single target, she know the target is in the sample.
+    Adversary: Single target, she knows the target is in the sample.
     """
     
     for n in tqdm(np.arange(1,16), desc="Experiment 1", ):
@@ -132,7 +129,7 @@ def exp1():
             post_gt = ModelBinary(n, m, gain="privacy - target in sample").post_vul_gt()
             post_th = ModelBinary.post_vul_privacy_target_in_s_th((n,m))
             if not float_equal(post_gt, post_th):
-                print(colored("[Failed]", "red") + " - at n = %d, m = %d, GT = %.3f, TH = %.3f"%(n,m,post_gt,post_th))
+                print(colored("[Failed]", "red") + " at n = %d, m = %d, GT = %.3f, TH = %.3f"%(n,m,post_gt,post_th))
                 return
     print(colored("[Successful]", "green") + " - Equation matches the ground truth")
 
@@ -192,10 +189,26 @@ def exp3():
     plt.legend()
     plt.show()
 
+def exp4():
+    """Experiment 4. Check wheter posterior vulnerability of closed formula is matches
+    the ground truth for 1 <= m <= n <= 15.
+    Adversary: Single target, she knows the target is out of the sample.
+    """
+
+    for n in tqdm(np.arange(1,16), desc="Experiment 4", ):
+        for m in np.arange(1,n):
+            post_gt = ModelBinary(n, m, gain="privacy - target out of sample").post_vul_gt()
+            post_th = ModelBinary.post_vul_privacy_target_out_s_th((n,m))
+            if not float_equal(post_gt, post_th):
+                print(colored("[Failed]", "red") + " - at n = %d, m = %d, GT = %.3f, TH = %.3f"%(n,m,post_gt,post_th))
+                return
+    print(colored("[Successful]", "green") + " - Equation matches the ground truth")
+
 def main():
     exp1()
     # exp2()  
     # exp3()
+    # exp4()
 
 if __name__ == "__main__":
     main()
