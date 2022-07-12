@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from util import float_equal
 from tqdm import tqdm
 from termcolor import colored
+import pandas as pd
 
 class ModelBinary:
     
@@ -103,10 +104,11 @@ class ModelBinary:
         """Close formula for posterior vulnerability of attribute inference attack."""
         n, m, prior = p # Population size, sample size
         if prior == 'in':
-            sum_ = 0
-            for y in np.arange(m+1):
-                sum_ = sum_ + (max(binom(m-1,y), binom(m-1,y-1)))/(2**(n-m)*2**m)
-            return sum_
+            return 1/2 + binom(m-1,floor((m-1)/2))/2**m
+        elif prior == 'out':
+            return 1/2
+        elif prior == 'unk':
+            return (n-m)/n * 1/2 + m/n * (1/2 + binom(m-1,floor((m-1)/2))/2**m)
 
 def exp1():
     """Check wheter posterior vulnerability of closed formula matches
@@ -114,7 +116,7 @@ def exp1():
     """    
     for n in tqdm(np.arange(1,15), desc="Experiment 1"):
         for m in np.arange(1,n):
-            for prior in ['in']:
+            for prior in ['unk']:
                 post_gt = ModelBinary(n, m, prior).post_vul_gt()
                 post_th = ModelBinary.post_vul_th((n,m,prior))
                 if not float_equal(post_gt, post_th):
@@ -124,7 +126,7 @@ def exp1():
     print(colored("[Successful]", "green") + " - Equation matches the ground truth")
 
 def main():
-    exp1()
-    
+    exp1()    
+
 if __name__ == "__main__":
     main()
