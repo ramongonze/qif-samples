@@ -39,19 +39,17 @@ def main():
     n_jobs = int(sys.argv[4])
     
     # Check if output file exists
-    if os.path.exists(output_file_name):
-        os.remove(output_file_name)
-
-    # Create an empty file
-    f = open(output_file_name, "w")
-    f.close()        
+    if not os.path.exists(output_file_name):
+        # Create an empty file
+        f = open(output_file_name, "w")
+        f.close()
 
     for n in np.arange(n_min,n_max+1):
         with Pool(n_jobs) as p:
             post = list(p.map(post_vul_utility, [(n,m) for m in np.arange(1,n+1)]))
 
         with open(output_file_name, "a") as csvfile:
-            writer_object = writer(csvfile, )
+            writer_object = writer(csvfile)
             writer_object.writerow(post)
             csvfile.close()
 
